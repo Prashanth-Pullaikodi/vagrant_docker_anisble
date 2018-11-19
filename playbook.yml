@@ -1,0 +1,88 @@
+---
+- hosts: all
+  become: yes
+  become_method: sudo
+
+  tasks:
+
+   - name: Add Docker repo
+     get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+        headers: 'key:value,key:value'
+        mode: 0644
+
+   - name: Enable  epel repo
+     ini_file:
+       dest: /etc/yum.repos.d/epel-release.repo
+       section: epel-release
+       option: enabled
+       value: 0
+
+
+   - name: Enable Docker Edge repo
+     ini_file:
+      dest: /etc/yum.repos.d/docer-ce.repo
+      section: 'docker-ce-edge'
+      option: enabled
+      value: 0
+
+
+   - name: Enable Docker Test repo
+     ini_file:
+      dest: /etc/yum.repos.d/docer-ce.repo
+      section: 'docker-ce-test'
+      option: enabled
+      value: 0
+
+
+   - name: Install docker and required packages
+     yum: name={{item}} state=latest
+     tags: docker
+     with_items:
+      - mysql
+      - wget
+      - libxslt-devel
+      - libxml2-devel
+      - bind-utils
+      - net-tools
+      - telnet
+      - git
+      - yum-utils
+      - device-mapper-persistent-data
+      - lvm2
+      - docker-ce
+
+
+   - name: "Add docker group"
+     group: name=docker state=present
+
+   - name: "add Vagrant to docker group"
+     command:  usermod -aG docker vagrant
+     #user: name=vagrant groups=docker append=yes
+
+   - name: "add Vagrant to Vagrant group"
+     command:  usermod -aG wheel vagrant
+
+   - name: "Allow 'wheel' group to have passwordless sudo"
+     lineinfile:
+       dest: /etc/sudoers
+       state: present
+       line: '%vagrant ALL=(ALL) NOPASSWD:ALL'
+       validate: 'visudo -cf %s'
+
+
+   - name: Start Docker service
+     service:
+      name: docker
+      state: started
+      enabled: yes
+
+   - name: "get docker info"
+     shell: docker info
+     register: docker_info
+     changed_when: false
+
+   - name: "create primary swarm manager"
+     shell: docker swarm init --advertise-addr {{ ansible_eth0['ipv4']['address'] }}
+     when: "docker_info.stdout.find('Swarm: inactive') != -1"
